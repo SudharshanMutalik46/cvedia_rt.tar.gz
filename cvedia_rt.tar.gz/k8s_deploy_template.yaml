@@ -1,0 +1,137 @@
+apiVersion: v2
+name: CVEDIA-RT Deployment
+description: A sample CVEDIA-RT instance deployment
+version: 2023.2.0
+appVersion: 2023.2.0
+
+maintainers:
+  - name: CVEDIA
+    email: support@cvedia.com
+    labels:
+      maintainer: cvedia
+
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: cvedia-rt
+  namespace: default
+  labels:
+    app: cvedia-rt
+    version: 2023.2.0
+    env: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cvedia-rt
+      env: production
+  template:
+    metadata:
+      labels:
+        app: cvedia-rt
+        version: 2023.2.0
+        env: production
+    spec:
+      containers:
+        - name: cvedia-rt
+          image: "cvedia/public:runtime-x86_64-public-2023.2.0"
+          imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          args: [ "--remote" ]
+          env:
+            - name: RUN_MQTT
+              value: "1"
+            - name: RUN_UI
+              value: "0"
+            - name: GST_DEBUG
+              value: "1"
+          ports:
+            # cvedia-rt main api
+            - name: managed-api
+              containerPort: 80
+              protocol: TCP
+            # (optional) cvedia-rt rest api
+            - name: raw-api
+              containerPort: 8080
+              protocol: TCP
+            # only when RUN_MQTT is 1
+            - name: mqtt
+              containerPort: 1883
+              protocol: TCP
+            # only when running with args --remote
+            - name: remote-ui
+              containerPort: 8889
+              protocol: TCP
+            # (optional) remote ui instance discovery -- will only recieve broadcasts
+            - name: remote-ui-discovery
+              containerPort: 12349
+              protocol: UDP
+            # only when publishing RTSP stream out
+            - name: rtsp-out
+              containerPort: 8554
+              protocol: TCP
+          volumes:
+            # create this by extracting it from the image first
+            - name: pvc-persist-projects
+              mountPath: /opt/cvedia-rt/assets/projects
+            # contains machine specific keys
+            - name: pvc-persist
+              mountPath: /opt/cvedia-rt/persist
+            # avoids downloading models on every restart
+            - name: pvc-model-cache
+              mountPath: /opt/cvedia-rt/assets/models
+            # alternative to k8s hostdev plugin
+            - name: dev-video0
+              mountPath: /dev/video0
+            # hailo mounts
+            - name: host-firmware
+              mountPath: /lib/firmware/hailo
+            - name: host-driver
+              mountPath: /usr/lib/libhailort.so
+            - name: dev-hailo0
+              mountPath: /dev/hailo0
+          # if using dev-*
+          securityContext:
+            privileged: true
+          # for NVIDIA consult CVEDIA-RT documentation for supported dGPUs:
+          # https://docs.cvedia.com/platforms/nvidia_gpu.html#linux
+          resources:
+            requests:
+              cpu: 4
+              memory: 2Gi
+              #hailo.ai/h8: 1
+              #nvidia.com/gpu: 1
+            limits:
+              cpu: 8
+              memory: 4Gi
+              #hailo.ai/h8: 1
+              #nvidia.com/gpu: 1
+      volumes:
+        - name: pvc-persist-projects
+          persistentVolumeClaim:
+            claimName: cvedia-rt-persist-projects
+        - name: pvc-persist
+          persistentVolumeClaim:
+            claimName: cvedia-rt-persist
+        - name: pvc-model-cache
+          persistentVolumeClaim:
+            claimName: cvedia-rt-model-cache
+        # alternative to k8s hostdev plugin
+        - name: dev-video0
+          hostPath:
+            path: /dev/video0
+        # hailo
+        - name: host-firmware
+          hostPath:
+            path: /lib/firmware/hailo
+            type: Directory
+        # Check: https://docs.cvedia.com/platforms/hailo.html#supported-hailort-versions
+        # for a list of supported hailort driver version
+        - name: host-driver
+          hostPath:
+            path: /usr/lib/libhailort.so.4.11.0
+            type: File
+        - name: dev-hailo0
+          hostPath:
+            path: /dev/hailo0
